@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>HumSearch </title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+<style>
+body { font-family: Arial; background:#0f172a; color:white; text-align:center; margin:0; padding:0; }
+button { padding:12px 20px; margin:10px; border-radius:10px; border:none; cursor:pointer; background:#22c55e; color:black; }
+input { padding:10px; width:60%; border-radius:10px; border:none; }
+#result { margin-top:20px; }
+canvas { margin-top:20px; }
+.card { background:#1e293b; padding:20px; border-radius:15px; display:inline-block; margin-bottom:20px; }
+img { border-radius:10px; margin-top:10px; }
+.spotify { background:#1DB954; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; color:white; font-size:16px; }
+</style>
+</head>
+
+<body>
+<h1>🎤 HumSearch Pro</h1>
+<p>Chante, fredonne, joue ou tape les paroles</p>
+
+<button onclick="startRecording()">🎙️ Enregistrer</button>
+<button onclick="stopRecording()">⏹️ Stop</button>
+<button onclick="analyzePitch()">🎹 Analyse mélodie</button>
+<br>
+<input type="text" id="lyrics" placeholder="Tape paroles ou notes...">
+<button onclick="searchLyrics()">🔎 Rechercher</button>
+<div id="result"></div>
+<canvas id="visualizer" width="400" height="100"></canvas>
+
+<script>
+let recognition, mediaRecorder, audioChunks = [];
+
+function startRecording(){
+  navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.start();
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    mediaRecorder.onstop = ()=>{ audioChunks = []; };
+  });
+
+  if('webkitSpeechRecognition' in window){
+    recognition = new webkitSpeechRecognition();
+    recognition.lang = 'fr-FR';
+    recognition.onresult = e => { document.getElementById("lyrics").value = e.results[0][0].transcript; };
+    recognition.start();
+  }
+}
+
+function stopRecording(){ if(mediaRecorder) mediaRecorder.stop(); if(recognition) recognition.stop(); }
+
+async function searchLyrics(){
+  let query = document.getElementById("lyrics").value;
+  document.getElementById("result").innerText = "Recherche...";
+  try {
+    let res = await fetch(`https://api.deezer.com/search?q=${query}`);
+    let data = await res.json();
+    if(data.data && data.data.length > 0){
+      let s = data.data[0];
+      let spotifyLink = `https://open.spotify.com/search/${encodeURIComponent(s.title + ' ' + s.artist.name)}`;
+      document.getElementById("result").innerHTML = `
+        <div class="card">
+          <h2>🎵 ${s.title}</h2>
+          <p>👤 ${s.artist.name}</p>
+          <img src="${s.album.cover_medium}" width="200">
+          <br>
+          <a href="${spotifyLink}" target="_blank"><button class="spotify">🎧 Aller sur Spotify</button></a>
+        </div>`;
+    } else {
+      document.getElementById("result").innerText = "Rien trouvé 😢";
+    }
+  } catch(e){ document.getElementById("result").innerText = "Erreur API"; }
+}
+
+async function analyzePitch(){
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const audioContext = new AudioContext();
+  const source = audioContext.createMediaStreamSource(stream);
+  const analyser = audioContext.createAnalyser();
+  source.connect(analyser);
+  analyser.fftSize = 2048;
+  const dataArray = new Uint8Array(analyser.frequencyBinCount);
+  const canvas = document.getElementById("visualizer");
+  const ctx = canvas.getContext("2d");
+  function draw(){
+    requestAnimationFrame(draw);
+    analyser.getByteFrequencyData(dataArray);
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    let barWidth = canvas.width / dataArray.length;
+    for(let i=0;i<dataArray.length;i++){
+      let height = dataArray[i]/2;
+      ctx.fillStyle = "#22c55e";
+      ctx.fillRect(i*barWidth, canvas.height-height, barWidth, height);
+    }
+  }
+  draw();
+}
+</script>
+</body>
+</html>
